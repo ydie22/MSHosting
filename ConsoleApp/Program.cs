@@ -1,8 +1,10 @@
 using System;
+using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
 using ConsoleApp.ServiceBus;
 using MediatR;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NServiceBus;
@@ -17,6 +19,8 @@ namespace ConsoleApp
 {
     public static class Program
     {
+        private static bool _commandHandlerRegistered;
+
         public static async Task<int> Main(string[] args)
         {
             Log.Logger = new LoggerConfiguration()
@@ -44,21 +48,15 @@ namespace ConsoleApp
 
         private static IHost CreateHost(string[] args)
         {
-            //var container = new Container();
-            //container.Options.DefaultLifestyle = Lifestyle.Scoped;
-            //container.Options.DefaultScopedLifestyle = new AsyncScopedLifestyle();
-
-            var hostBuilder = new HostBuilder()
-                .ConfigureHostConfiguration(configHost => { })
-                .ConfigureAppConfiguration((hostContext, configApp) => { })
+            var host = CreateDefaultBuilder(args)
                 .UseSerilog()
                 .UseNServiceBus(hostContext =>
                 {
-                    var endpoint = new EndpointConfiguration("MyEndpoint");
+                    var endpoint = EndpointFactory.CreateEndpoint("MyEndpoint");
                     // configure endpoint here
                     var transport = endpoint.UseTransport<LearningTransport>();
                     transport.Routing().RouteToEndpoint(Assembly.GetExecutingAssembly(), "MyEndpoint");
-                    endpoint.HandleCommand<SomeCommand>();
+                    endpoint.HandleCommand<SomeCommand>(hostContext);
                     var pipe = endpoint.Pipeline;
                     pipe.Register(
                         typeof(AsyncScopeProviderBehavior),
@@ -66,21 +64,26 @@ namespace ConsoleApp
 
                     return endpoint;
                 })
-                .ConfigureSimpleInjector((hostContext, services, container) =>
+                .ConfigureServices((ctx, services) =>
                 {
-                    // done when adding bus and calling HandleCommand
-                    services.AddScoped(typeof(MediatedRequestMessageHandler<SomeCommand>),
-                        _ => container.GetInstance<MediatedRequestMessageHandler<SomeCommand>>());
-                    container.Register(typeof(MediatedRequestMessageHandler<>), typeof(MediatedRequestMessageHandler<>),
-                        Lifestyle.Singleton);
-                    //container.AddRegistrations<StuffRegistration>(hostContext);
-                    container.AddMediatr(Assembly.GetExecutingAssembly());
-                    container.Register<WorkerDependency>(Lifestyle.Singleton);
+                    services.AddSimpleInjector(ctx.GetContainer(), options =>
+                    {
+                        // Hooks hosted services into the Generic Host pipeline
+                        // while resolving them through Simple Injector
+                        options.AddHostedService<Worker>();
+
+                        // Allows injection of ILogger
+                        // application components.
+                        options.AddLogging();
+                        var container = options.Container;
+                        container.AddMediatr(Assembly.GetExecutingAssembly());
+                        container.Register<WorkerDependency>(Lifestyle.Singleton);
+                    });
                 })
-                .UseConsoleLifetime();
-            var host = hostBuilder
-                .Build()
-                .UseSimpleInjector(hostBuilder.GetContainer());
+                .UseConsoleLifetime()
+                .Build();
+
+            host.UseSimpleInjector(host.GetContainer());
 
             // Register application components.
             // probably not doable before asp net has started, and will be called upon first resolution
@@ -89,12 +92,57 @@ namespace ConsoleApp
             return host;
         }
 
-        private static void HandleCommand<TCommand>(this EndpointConfiguration endpointConfiguration)
+        private static IHostBuilder CreateDefaultBuilder(string[] args)
+        {
+            return new HostBuilder()
+                .UseContentRoot(Directory.GetCurrentDirectory())
+                .ConfigureHostConfiguration(hostConfig =>
+                {
+                    hostConfig.AddEnvironmentVariables("DOTNET_");
+                    if (args != null) hostConfig.AddCommandLine(args);
+                })
+                .ConfigureAppConfiguration((builderContext, appConfig) =>
+                {
+                    var env = builderContext.HostingEnvironment;
+                    //var country = builderContext.Configuration.GetSection("country");
+                    appConfig
+                        .AddJsonFile("appSettings.json", true, true)
+                        .AddJsonFile($"appSettings.{env.EnvironmentName}.json", true, true)
+                        // TODO: load country config files here
+                        ;
+
+                    appConfig.AddEnvironmentVariables();
+
+                    if (args != null) appConfig.AddCommandLine(args);
+                })
+                .UseDefaultServiceProvider((context, options) =>
+                {
+                    options.ValidateScopes = true;
+                    options.ValidateOnBuild = true;
+                });
+        }
+
+        private static void HandleCommand<TCommand>(this EndpointConfiguration endpointConfiguration,
+            HostBuilderContext hostBuilderContext)
             where TCommand : class, IRequest
         {
             var s = endpointConfiguration.GetSettings();
             var mhr = s.GetOrCreate<MessageHandlerRegistry>();
             mhr.RegisterHandler(typeof(MediatedRequestMessageHandler<TCommand>));
+            var container = hostBuilderContext.GetContainer();
+            if (!_commandHandlerRegistered)
+            {
+                container.Register(typeof(MediatedRequestMessageHandler<>),
+                    typeof(MediatedRequestMessageHandler<>),
+                    Lifestyle.Singleton);
+                _commandHandlerRegistered = true;
+            }
+
+            endpointConfiguration.RegisterComponents(components =>
+            {
+                components.ConfigureComponent(container.GetInstance<MediatedRequestMessageHandler<TCommand>>,
+                    DependencyLifecycle.InstancePerUnitOfWork);
+            });
         }
     }
 
@@ -108,36 +156,14 @@ namespace ConsoleApp
             return container;
         }
 
-        public static IHostBuilder ConfigureSimpleInjector(this IHostBuilder builder,
-            Action<HostBuilderContext, IServiceCollection, Container> configurationDelegate)
-        {
-            var container = GetContainer(builder);
-
-            builder.ConfigureServices((ctx, services) => { configurationDelegate(ctx, services, container); });
-            return builder;
-        }
-
-        public static Container GetContainer(this IHostBuilder builder)
+        public static Container GetContainer(this HostBuilderContext context)
         {
             Container container;
-            var containerPresent = builder.Properties.TryGetValue("container", out var containerAsObject);
+            var containerPresent = context.Properties.TryGetValue("container", out var containerAsObject);
             if (!containerPresent)
             {
                 container = CreateContainer();
-                builder.Properties.Add("container", container);
-                builder.ConfigureServices((ctx, services) =>
-                {
-                    services.AddSimpleInjector(container, options =>
-                    {
-                        // Hooks hosted services into the Generic Host pipeline
-                        // while resolving them through Simple Injector
-                        options.AddHostedService<Worker>();
-
-                        // Allows injection of ILogger & IStringLocalizer dependencies into
-                        // application components.
-                        options.AddLogging();
-                    });
-                });
+                context.Properties.Add("container", container);
             }
             else
             {
@@ -145,6 +171,11 @@ namespace ConsoleApp
             }
 
             return container;
+        }
+
+        public static Container GetContainer(this IHost host)
+        {
+            return host.Services.GetRequiredService<Container>();
         }
     }
 }
