@@ -1,8 +1,6 @@
 ﻿using System;
-using MediatR;
 using NServiceBus;
 using NServiceBus.Features;
-using System.Linq;
 
 namespace ConsoleApp.ServiceBus
 {
@@ -27,6 +25,9 @@ namespace ConsoleApp.ServiceBus
             //    .DefiningCommandsAs(
             //        type => type.Namespace != null && type.Namespace.Contains("Contracts") && type.Name.EndsWith("Request")
             //                && type.GetInterfaces().Contains(typeof(IRequest)));
+
+            // to remove
+            endpoint.EnableInstallers();
             return endpoint;
         }
     }

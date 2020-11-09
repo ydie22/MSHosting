@@ -3,13 +3,12 @@ using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
 using ConsoleApp.ServiceBus;
-using MediatR;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using NServiceBus;
-using NServiceBus.Configuration.AdvancedExtensibility;
-using NServiceBus.Unicast;
 using Serilog;
 using Serilog.Events;
 using SimpleInjector;
@@ -19,8 +18,6 @@ namespace ConsoleApp
 {
     public static class Program
     {
-        private static bool _commandHandlerRegistered;
-
         public static async Task<int> Main(string[] args)
         {
             Log.Logger = new LoggerConfiguration()
@@ -48,14 +45,16 @@ namespace ConsoleApp
 
         private static IHost CreateHost(string[] args)
         {
-            var host = CreateDefaultBuilder(args)
+            var host = CreateBuilder(args)
                 .UseSerilog()
                 .UseNServiceBus(hostContext =>
                 {
                     var endpoint = EndpointFactory.CreateEndpoint("MyEndpoint");
                     // configure endpoint here
-                    var transport = endpoint.UseTransport<LearningTransport>();
-                    transport.Routing().RouteToEndpoint(Assembly.GetExecutingAssembly(), "MyEndpoint");
+                    endpoint
+                        .AddDefaultTransport(hostContext, "RabbitMQ")
+                        .ConfigureRouting(routing =>
+                            routing.RouteToEndpoint(Assembly.GetExecutingAssembly(), "MyEndpoint"));
                     endpoint.HandleCommand<SomeCommand>(hostContext);
                     var pipe = endpoint.Pipeline;
                     pipe.Register(
@@ -68,6 +67,7 @@ namespace ConsoleApp
                 {
                     services.AddSimpleInjector(ctx.GetContainer(), options =>
                     {
+                        options.AddAspNetCore();
                         // Hooks hosted services into the Generic Host pipeline
                         // while resolving them through Simple Injector
                         options.AddHostedService<Worker>();
@@ -79,6 +79,9 @@ namespace ConsoleApp
                         container.AddMediatr(Assembly.GetExecutingAssembly());
                         container.Register<WorkerDependency>(Lifestyle.Singleton);
                     });
+                    services.AddHealthChecks()
+                        .AddRabbitMQ(rabbitConnectionString: "amqp://guest:guest@localhost/", name: "rabbitmq");
+
                 })
                 .UseConsoleLifetime()
                 .Build();
@@ -92,7 +95,7 @@ namespace ConsoleApp
             return host;
         }
 
-        private static IHostBuilder CreateDefaultBuilder(string[] args)
+        private static IHostBuilder CreateBuilder(string[] args)
         {
             return new HostBuilder()
                 .UseContentRoot(Directory.GetCurrentDirectory())
@@ -104,6 +107,7 @@ namespace ConsoleApp
                 .ConfigureAppConfiguration((builderContext, appConfig) =>
                 {
                     var env = builderContext.HostingEnvironment;
+                    // load environment?
                     //var country = builderContext.Configuration.GetSection("country");
                     appConfig
                         .AddJsonFile("appSettings.json", true, true)
@@ -119,30 +123,48 @@ namespace ConsoleApp
                 {
                     options.ValidateScopes = true;
                     options.ValidateOnBuild = true;
+                })
+                .ConfigureWebHost(webBuilder =>
+                {
+                    //webBuilder.ConfigureAppConfiguration((ctx, cb) =>
+                    //{
+                    //    if (ctx.HostingEnvironment.IsDevelopment())
+                    //        StaticWebAssetsLoader.UseStaticWebAssets(ctx.HostingEnvironment, ctx.Configuration);
+                    //});
+                    webBuilder.UseKestrel((builderContext, options) =>
+                        {
+                            options.Configure(builderContext.Configuration.GetSection("Kestrel"));
+                        })
+                        .ConfigureServices((hostingContext, services) =>
+                        {
+                            // Host filtering is not included in default config
+                            // See https://andrewlock.net/adding-host-filtering-to-kestrel-in-aspnetcore/ to include it
+                            // if running an internet-facing endpoint
+
+                            // Forwarded headers only if there is a reverse proxy
+                            // See https://docs.microsoft.com/en-us/aspnet/core/host-and-deploy/proxy-load-balancer?view=aspnetcore-3.1
+                            //if (string.Equals("true", hostingContext.Configuration["ForwardedHeaders_Enabled"],
+                            //    StringComparison.OrdinalIgnoreCase))
+                            //{
+                            //    services.Configure<ForwardedHeadersOptions>(options =>
+                            //    {
+                            //        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor |
+                            //                                   ForwardedHeaders.XForwardedProto;
+                            //        // Only loopback proxies are allowed by default. Clear that restriction because forwarders are
+                            //        // being enabled by explicit configuration.
+                            //        options.KnownNetworks.Clear();
+                            //        options.KnownProxies.Clear();
+                            //    });
+
+                            //    services.AddTransient<IStartupFilter, ForwardedHeadersStartupFilter>();
+                            //}
+
+                            services.AddRouting();
+                            services.AddHealthChecks();
+                        });
+
+                    webBuilder.UseStartup<Startup>();
                 });
-        }
-
-        private static void HandleCommand<TCommand>(this EndpointConfiguration endpointConfiguration,
-            HostBuilderContext hostBuilderContext)
-            where TCommand : class, IRequest
-        {
-            var s = endpointConfiguration.GetSettings();
-            var mhr = s.GetOrCreate<MessageHandlerRegistry>();
-            mhr.RegisterHandler(typeof(MediatedRequestMessageHandler<TCommand>));
-            var container = hostBuilderContext.GetContainer();
-            if (!_commandHandlerRegistered)
-            {
-                container.Register(typeof(MediatedRequestMessageHandler<>),
-                    typeof(MediatedRequestMessageHandler<>),
-                    Lifestyle.Singleton);
-                _commandHandlerRegistered = true;
-            }
-
-            endpointConfiguration.RegisterComponents(components =>
-            {
-                components.ConfigureComponent(container.GetInstance<MediatedRequestMessageHandler<TCommand>>,
-                    DependencyLifecycle.InstancePerUnitOfWork);
-            });
         }
     }
 
