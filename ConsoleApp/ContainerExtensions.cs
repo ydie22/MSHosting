@@ -2,21 +2,12 @@ using System;
 using System.Reflection;
 using MediatR;
 using MediatR.Pipeline;
-using Microsoft.Extensions.Hosting;
 using SimpleInjector;
 
 namespace ConsoleApp
 {
     public static class ContainerExtensions
     {
-        public static Container AddRegistrations<TRegistrar>(this Container container, HostBuilderContext context)
-            where TRegistrar : IContainerRegistrar, new()
-        {
-            var registrar = new TRegistrar();
-            registrar.AddRegistrations(container, context);
-            return container;
-        }
-
         public static Container AddMediatr(this Container container, params Assembly[] handlerAssemblies)
         {
             container.RegisterSingleton<IMediator, Mediator>();

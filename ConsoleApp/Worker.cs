@@ -1,8 +1,8 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using ConsoleApp.Grpc;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using NServiceBus;
 using SimpleInjector;
 using SimpleInjector.Lifestyles;
@@ -12,15 +12,12 @@ namespace ConsoleApp
     public class Worker : BackgroundService, IAsyncDisposable
     {
         private readonly Container _container;
-        private readonly WorkerDependency _dependency;
-        private readonly ILogger _logger;
+        private readonly SingletonDependency _singletonDependency;
 
-        public Worker(WorkerDependency dependency, Container container, ILogger logger)
+        public Worker(SingletonDependency singletonDependency, Container container)
         {
-            _dependency = dependency ?? throw new ArgumentNullException(nameof(dependency));
+            _singletonDependency = singletonDependency ?? throw new ArgumentNullException(nameof(singletonDependency));
             _container = container;
-            _logger = logger;
-            _logger.LogInformation("Injected!");
         }
 
         public ValueTask DisposeAsync()
@@ -36,6 +33,8 @@ namespace ConsoleApp
                 {
                     var session = _container.GetInstance<IMessageSession>();
                     await session.Send(new SomeCommand {Property = "somevalue"}, new SendOptions());
+                    var calculator = _container.GetInstance<ICalculator>();
+                    var result = await calculator.MultiplyAsync(new MultiplyRequest {X = 12, Y = 4});
                 }
 
                 await Task.Delay(10000, stoppingToken);

@@ -78,7 +78,8 @@ namespace ConsoleApp
                     //});
                     webBuilder.UseKestrel((builderContext, options) =>
                         {
-                            options.Configure(builderContext.Configuration.GetSection("Kestrel"));
+                            var section = builderContext.Configuration.GetSection("Kestrel");
+                            options.Configure(section);
                         })
                         .ConfigureServices((hostingContext, services) =>
                         {

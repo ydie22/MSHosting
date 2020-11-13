@@ -1,7 +1,9 @@
+using ConsoleApp.Grpc;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 
 namespace ConsoleApp
@@ -15,18 +17,18 @@ namespace ConsoleApp
 
             app.UseRouting();
 
-            //app.UseEndpoints(endpoints =>
-            //{
-            //    endpoints.MapGrpcService<GreeterService>();
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapGrpcService<MyCalculator>();
 
-            //    endpoints.MapGet("/",
-            //        async context =>
-            //        {
-            //            await context.Response.WriteAsync(
-            //                "Communication with gRPC endpoints must be made through a gRPC client. To learn how to create a client, visit: https://go.microsoft.com/fwlink/?linkid=2086909");
-            //        });
-            //    endpoints.MapHealthChecksUI();
-            //});
+                endpoints.MapGet("/",
+                    async context =>
+                    {
+                        await context.Response.WriteAsync(
+                            "Communication with gRPC endpoints must be made through a gRPC client. To learn how to create a client, visit: https://go.microsoft.com/fwlink/?linkid=2086909");
+                    });
+                //endpoints.MapHealthChecksUI();
+            });
             // HealthCheck middleware
             app.UseHealthChecks("/hc", new HealthCheckOptions
             {

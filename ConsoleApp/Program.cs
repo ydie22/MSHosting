@@ -1,9 +1,15 @@
 using System;
 using System.Reflection;
 using System.Threading.Tasks;
+using ConsoleApp.Grpc;
 using ConsoleApp.ServiceBus;
+using Grpc.AspNetCore.Server;
+using Grpc.Net.Client;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NServiceBus;
+using ProtoBuf.Grpc.Client;
+using ProtoBuf.Grpc.Server;
 using Serilog;
 using Serilog.Events;
 using SimpleInjector;
@@ -16,9 +22,10 @@ namespace ConsoleApp
         {
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
-                .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+                //.MinimumLevel.Override("Microsoft", LogEventLevel.Information)
                 .Enrich.FromLogContext()
-                .WriteTo.Console()
+                .WriteTo.Console(
+                    outputTemplate: "{Timestamp:HH:mm:ss} {SourceContext} [{Level}] {Message}{NewLine}{Exception}")
                 .CreateLogger();
             try
             {
@@ -66,14 +73,23 @@ namespace ConsoleApp
                         // while resolving them through Simple Injector
                         options.AddHostedService<Worker>();
 
-                        // Allows injection of ILogger
+                        // Allows injection of ILogger in
                         // application components.
                         options.AddLogging();
                         var container = options.Container;
                         container.AddMediatr(Assembly.GetExecutingAssembly());
-                        container.Register<WorkerDependency>(Lifestyle.Singleton);
+                        container.Register<SingletonDependency>(Lifestyle.Singleton);
+                        container.Register<ScopedDependency>();
+                        container.Register<MyCalculator>();
+
+                        GrpcClientFactory.AllowUnencryptedHttp2 = true;
+                        var channel = GrpcChannel.ForAddress("http://localhost:55555");
+                        container.Register(() => channel.CreateGrpcService<ICalculator>());
                     });
                     services.AddServiceBusHealthCheck(ctx);
+                    services.AddCodeFirstGrpc();
+                    services.AddSingleton(typeof(IGrpcServiceActivator<>),
+                        typeof(GrpcSimpleInjectorActivator<>));
                 })
                 .UseConsoleLifetime()
                 .Build();
