@@ -11,7 +11,6 @@ using NServiceBus;
 using ProtoBuf.Grpc.Client;
 using ProtoBuf.Grpc.Server;
 using Serilog;
-using Serilog.Events;
 using SimpleInjector;
 
 namespace ConsoleApp
