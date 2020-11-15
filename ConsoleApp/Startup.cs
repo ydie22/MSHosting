@@ -1,4 +1,5 @@
 using ConsoleApp.Grpc;
+using ConsoleApp.Grpc.HealthCheck;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -22,6 +23,7 @@ namespace ConsoleApp
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGrpcService<MyCalculator>();
+                endpoints.MapGrpcService<HealthCheckService<MyCalculator>>();
 
                 endpoints.MapGet("/",
                     async context =>

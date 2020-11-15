@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using System.Threading.Tasks;
 using ConsoleApp.Grpc;
+using ConsoleApp.Grpc.HealthCheck;
 using ConsoleApp.ServiceBus;
 using Grpc.AspNetCore.Server;
 using Grpc.Net.Client;
@@ -80,6 +81,7 @@ namespace ConsoleApp
                         container.Register<SingletonDependency>(Lifestyle.Singleton);
                         container.Register<ScopedDependency>();
                         container.Register<MyCalculator>();
+                        container.Register<HealthCheckService<MyCalculator>>();
 
                         GrpcClientFactory.AllowUnencryptedHttp2 = true;
                         var channel = GrpcChannel.ForAddress("http://localhost:55555");
