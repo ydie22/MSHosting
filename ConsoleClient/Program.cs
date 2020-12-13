@@ -2,30 +2,27 @@
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
-using BenchmarkDotNet.Running;
 using ConsoleApp.Grpc;
 using Grpc.Net.Client;
 using ProtoBuf.Grpc.Client;
 
 namespace ConsoleClient
 {
-    internal class Program
+    internal static class Program
     {
         private static async Task Main(string[] args)
         {
             Console.WriteLine("Press any key to start");
-            Console.ReadKey();
-            try
-            {
-                BenchmarkRunner.Run<ClientRunner>();
-                //await new ClientRunner().Run();
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
-            }
-
-            Console.ReadKey();
+            while (Console.ReadKey().KeyChar != 'q')
+                try
+                {
+                    //BenchmarkRunner.Run<ClientRunner>();
+                    await new ClientRunner().Run();
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e);
+                }
         }
     }
 
@@ -33,15 +30,18 @@ namespace ConsoleClient
     [SimpleJob(RunStrategy.Throughput, invocationCount: 500)]
     public class ClientRunner
     {
-        private static GrpcChannel _channel;
+        private static readonly GrpcChannel _channel;
 
-        [GlobalSetup]
-        public void Setup()
+        static ClientRunner()
         {
             GrpcClientFactory.AllowUnencryptedHttp2 = true;
             _channel = GrpcChannel.ForAddress("http://localhost:55555",
                 new GrpcChannelOptions());
+        }
 
+        [GlobalSetup]
+        public void Setup()
+        {
         }
 
         [Benchmark]
@@ -52,8 +52,8 @@ namespace ConsoleClient
 
             //for (var i = 0; i < 10000; i++)
             //{
-                //Console.SetCursorPosition(0, 0);
-                //Console.Write(i);
+            //Console.SetCursorPosition(0, 0);
+            //Console.Write(i);
             //}
         }
     }

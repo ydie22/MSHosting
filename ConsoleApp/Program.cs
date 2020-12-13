@@ -25,14 +25,14 @@ namespace ConsoleApp
         public static async Task<int> Main(string[] args)
         {
             Activity.DefaultIdFormat = ActivityIdFormat.W3C;
-            Log.Logger = new LoggerConfiguration()
-                //.MinimumLevel.Debug()
-                .MinimumLevel.Warning()
-                //.MinimumLevel.Override("Microsoft", LogEventLevel.Information)
-                .Enrich.FromLogContext()
-                .WriteTo.Console(
-                    outputTemplate: "{Timestamp:HH:mm:ss} {SourceContext} {TraceId} [{Level}] {Message}{NewLine}{Exception}")
-                .CreateLogger();
+            //Log.Logger = new LoggerConfiguration()
+            //    .MinimumLevel.Debug()
+            //    //.MinimumLevel.Warning()
+            //    //.MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+            //    .Enrich.FromLogContext()
+            //    .WriteTo.Console(
+            //        outputTemplate: "{Timestamp:HH:mm:ss} {SourceContext} TraceId:{TraceId} [{Level}] {Message}{NewLine}{Exception}")
+            //    .CreateLogger();
             try
             {
                 await CreateHost(args).RunAsync();
@@ -70,23 +70,29 @@ namespace ConsoleApp
         private static IHost CreateHost(string[] args)
         {
             var host = HostBuilderHelper.CreateBuilder<Startup>(args)
-                .UseSerilog()
-                //.UseNServiceBus(hostContext =>
-                //{
-                //    var endpoint = EndpointFactory.CreateEndpoint("MyEndpoint");
-                //    // configure endpoint here
-                //    endpoint
-                //        .AddDefaultTransport(hostContext, "RabbitMQ")
-                //        .ConfigureRouting(routing =>
-                //            routing.RouteToEndpoint(Assembly.GetExecutingAssembly(), "MyEndpoint"));
-                //    endpoint.HandleCommand<SomeCommand>(hostContext);
-                //    var pipe = endpoint.Pipeline;
-                //    pipe.Register(
-                //        typeof(AsyncScopeProviderBehavior),
-                //        "Begins an async scope to be used by the DI container to resolve instances in an incoming message pipeline.");
+                .UseSerilog((hostingContext, services, loggerConfiguration) =>
+                {
+                    loggerConfiguration = loggerConfiguration
+                        .ReadFrom.Configuration(hostingContext.Configuration);
+                    if (Debugger.IsAttached)
+                        loggerConfiguration.WriteTo.Debug();
+                })
+                .UseNServiceBus(hostContext =>
+                {
+                    var endpoint = EndpointFactory.CreateEndpoint("MyEndpoint");
+                    // configure endpoint here
+                    endpoint
+                        .AddDefaultTransport(hostContext, "RabbitMQ")
+                        .ConfigureRouting(routing =>
+                            routing.RouteToEndpoint(Assembly.GetExecutingAssembly(), "MyEndpoint"));
+                    endpoint.HandleCommand<SomeCommand>(hostContext);
+                    var pipe = endpoint.Pipeline;
+                    pipe.Register(
+                        typeof(AsyncScopeProviderBehavior),
+                        "Begins an async scope to be used by the DI container to resolve instances in an incoming message pipeline.");
 
-                //    return endpoint;
-                //})
+                    return endpoint;
+                })
                 .ConfigureServices((ctx, services) =>
                 {
                     GrpcClientFactory.AllowUnencryptedHttp2 = true;
@@ -112,7 +118,7 @@ namespace ConsoleApp
                         container.Register(() => channel.CreateGrpcService<ICalculator>());
                     });
                     services.AddHealthChecks().AddGrpcClient<ICalculator>(channel);
-                    //services.AddServiceBusHealthCheck(ctx);
+                    services.AddServiceBusHealthCheck(ctx);
                     services.AddCodeFirstGrpc();
                     services.AddSingleton(typeof(IGrpcServiceActivator<>),
                         typeof(GrpcSimpleInjectorActivator<>));

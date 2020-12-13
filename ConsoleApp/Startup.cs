@@ -1,3 +1,4 @@
+using System.Linq;
 using ConsoleApp.Grpc;
 using ConsoleApp.Grpc.HealthCheck;
 using HealthChecks.UI.Client;
@@ -17,7 +18,15 @@ namespace ConsoleApp
         {
             if (env.IsDevelopment()) app.UseDeveloperExceptionPage();
 
-            app.UseSerilogRequestLogging();
+            app.UseSerilogRequestLogging(options =>
+            {
+                options.EnrichDiagnosticContext = (diag, httpContext) =>
+                {
+                    diag.Set("RequestHeaders",
+                        httpContext.Request.Headers.ToDictionary(h => h.Key, 
+                            h => h.Value.ToString()), true);
+                };
+            });
             app.UseRouting();
 
             app.UseEndpoints(endpoints =>
