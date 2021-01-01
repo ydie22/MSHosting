@@ -1,7 +1,9 @@
 ﻿using System.Runtime.Serialization;
 using System.ServiceModel;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using ProtoBuf.Grpc;
+using Serilog.Extensions.Logging;
 
 namespace ConsoleApp.Grpc
 {
@@ -27,6 +29,8 @@ namespace ConsoleApp.Grpc
 
     public class MyCalculator : ICalculator
     {
+
+        private static readonly ILogger log = Log.ForContext<MyCalculator>();
         private readonly ScopedDependency _dependency;
 
         public MyCalculator(ScopedDependency dependency)
@@ -36,6 +40,7 @@ namespace ConsoleApp.Grpc
 
         ValueTask<MultiplyResult> ICalculator.MultiplyAsync(MultiplyRequest request, CallContext context)
         {
+            log.LogInformation("What the...");
             return new ValueTask<MultiplyResult>(new MultiplyResult {Result = request.X * request.Y});
         }
     }

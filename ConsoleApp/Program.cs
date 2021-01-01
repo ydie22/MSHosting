@@ -11,40 +11,44 @@ using Grpc.Net.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NServiceBus;
 using ProtoBuf.Grpc.Client;
 using ProtoBuf.Grpc.Server;
 using Serilog;
 using Serilog.Extensions.Logging;
+using Serilog.Formatting.Compact;
 using SimpleInjector;
+using ILogger = Microsoft.Extensions.Logging.ILogger;
 
 namespace ConsoleApp
 {
+    public static class Log
+    {
+        public static ILoggerFactory LoggerFactory { get; } = new SerilogLoggerFactory();
+        public static ILogger ForContext<T>() => LoggerFactory.CreateLogger<T>();
+    }
     public static class Program
     {
         public static async Task<int> Main(string[] args)
         {
             Activity.DefaultIdFormat = ActivityIdFormat.W3C;
-            //Log.Logger = new LoggerConfiguration()
-            //    .MinimumLevel.Debug()
-            //    //.MinimumLevel.Warning()
-            //    //.MinimumLevel.Override("Microsoft", LogEventLevel.Information)
-            //    .Enrich.FromLogContext()
-            //    .WriteTo.Console(
-            //        outputTemplate: "{Timestamp:HH:mm:ss} {SourceContext} TraceId:{TraceId} [{Level}] {Message}{NewLine}{Exception}")
-            //    .CreateLogger();
+            using var startupLogger = new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .Enrich.FromLogContext()
+                .WriteTo.Console(
+                    new CompactJsonFormatter())
+                //outputTemplate: "{Timestamp:HH:mm:ss} {SourceContext} TraceId:{TraceId} [{Level}] {Message}{NewLine}{Exception}")
+                .CreateLogger();
+            Serilog.Log.Logger = startupLogger;
             try
             {
                 await CreateHost(args).RunAsync();
             }
             catch (Exception exception)
             {
-                Log.Fatal(exception, "Host terminated unexpectedly");
+                startupLogger.Fatal(exception, "Host terminated unexpectedly");
                 return 1;
-            }
-            finally
-            {
-                Log.CloseAndFlush();
             }
 
             return 0;
@@ -90,14 +94,13 @@ namespace ConsoleApp
                     pipe.Register(
                         typeof(AsyncScopeProviderBehavior),
                         "Begins an async scope to be used by the DI container to resolve instances in an incoming message pipeline.");
-
                     return endpoint;
                 })
                 .ConfigureServices((ctx, services) =>
                 {
                     GrpcClientFactory.AllowUnencryptedHttp2 = true;
                     var channel = GrpcChannel.ForAddress("http://localhost:55555",
-                        new GrpcChannelOptions {LoggerFactory = new SerilogLoggerFactory()});
+                        new GrpcChannelOptions {LoggerFactory = Log.LoggerFactory});
                     services.AddSimpleInjector(ctx.GetContainer(), options =>
                     {
                         options.AddAspNetCore();
