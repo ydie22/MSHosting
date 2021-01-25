@@ -7,7 +7,7 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.12.1" />
-    <PackageReference Include="protobuf-net.Grpc.ClientFactory" Version="1.0.136" />
+    <PackageReference Include="protobuf-net.Grpc.ClientFactory" Version="1.0.140" />
   </ItemGroup>
 
   <ItemGroup>

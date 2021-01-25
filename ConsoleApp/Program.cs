@@ -16,6 +16,7 @@ using NServiceBus;
 using ProtoBuf.Grpc.Client;
 using ProtoBuf.Grpc.Server;
 using Serilog;
+using Serilog.Core;
 using Serilog.Extensions.Logging;
 using Serilog.Formatting.Compact;
 using SimpleInjector;
@@ -26,21 +27,19 @@ namespace ConsoleApp
     public static class Log
     {
         public static ILoggerFactory LoggerFactory { get; } = new SerilogLoggerFactory();
-        public static ILogger ForContext<T>() => LoggerFactory.CreateLogger<T>();
+
+        public static ILogger ForContext<T>()
+        {
+            return LoggerFactory.CreateLogger<T>();
+        }
     }
+
     public static class Program
     {
         public static async Task<int> Main(string[] args)
         {
             Activity.DefaultIdFormat = ActivityIdFormat.W3C;
-            using var startupLogger = new LoggerConfiguration()
-                .MinimumLevel.Information()
-                .Enrich.FromLogContext()
-                .WriteTo.Console(
-                    new CompactJsonFormatter())
-                //outputTemplate: "{Timestamp:HH:mm:ss} {SourceContext} TraceId:{TraceId} [{Level}] {Message}{NewLine}{Exception}")
-                .CreateLogger();
-            Serilog.Log.Logger = startupLogger;
+            using var startupLogger = CreateStartupLogger();
             try
             {
                 await CreateHost(args).RunAsync();
@@ -52,6 +51,18 @@ namespace ConsoleApp
             }
 
             return 0;
+        }
+
+        public static Logger CreateStartupLogger()
+        {
+            var startupLogger = new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .Enrich.FromLogContext()
+                .WriteTo.Console(
+                    new CompactJsonFormatter())
+                .CreateLogger();
+            Serilog.Log.Logger = startupLogger;
+            return startupLogger;
         }
 
         public static IHealthChecksBuilder AddGrpcClient<TService>(
@@ -78,8 +89,7 @@ namespace ConsoleApp
                 {
                     loggerConfiguration = loggerConfiguration
                         .ReadFrom.Configuration(hostingContext.Configuration);
-                    if (Debugger.IsAttached)
-                        loggerConfiguration.WriteTo.Debug();
+                    if (Debugger.IsAttached) loggerConfiguration.MinimumLevel.Debug().WriteTo.Debug();
                 })
                 .UseNServiceBus(hostContext =>
                 {

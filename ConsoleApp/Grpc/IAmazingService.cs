@@ -3,7 +3,6 @@ using System.ServiceModel;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ProtoBuf.Grpc;
-using Serilog.Extensions.Logging;
 
 namespace ConsoleApp.Grpc
 {
